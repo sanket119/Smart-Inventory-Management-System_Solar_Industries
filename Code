@@ -1,0 +1,295 @@
+import pandas as pd
+import numpy as np
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+import matplotlib.pyplot as plt
+from pandas.tseries.frequencies import to_offset
+
+# Step 1: Load the data
+data_path = '/content/ML-Dataset.csv'  # Update this if necessary
+data = pd.read_csv(data_path)
+
+# Step 2: Ensure 'OrderDate' column is in datetime format and handle errors
+data['OrderDate'] = pd.to_datetime(data['OrderDate'], errors='coerce', dayfirst=True)
+
+# Step 3: Drop any rows with invalid or missing dates
+data = data.dropna(subset=['OrderDate'])
+
+# Step 4: Sort data by date
+data = data.sort_values('OrderDate').reset_index(drop=True)
+
+# Step 5: Aggregate data by date to ensure it's in daily format, summing up daily demands if necessary
+# Assuming 'OrderItemQuantity' represents the demand for each product
+daily_data = data.groupby('OrderDate')['OrderItemQuantity'].sum().asfreq('D')
+
+# Step 6: Fill any missing days with zero demand (assuming missing days mean zero orders)
+daily_data = daily_data.fillna(0)
+
+# Step 7: Plot the last 1 year of data to inspect demand patterns
+plt.figure(figsize=(12, 6))
+daily_data[-365:].plot(title='Last 1 Year of Demand Data')
+plt.xlabel('Date')
+plt.ylabel('Daily Demand')
+plt.show()
+
+# Step 8: Define and train the SARIMA model
+# Using seasonal order to capture weekly or monthly seasonality (choose based on data pattern)
+# Here, p=1, d=1, q=1 with seasonal order as (1,1,1,7) as an example; adjust these values as needed
+sarima_model = SARIMAX(daily_data, order=(1, 1, 1), seasonal_order=(1, 1, 1, 7), enforce_stationarity=False, enforce_invertibility=False)
+sarima_fit = sarima_model.fit(disp=False)
+
+# Step 9: Forecast future demand (e.g., for 30 days)
+forecast_period = 30  # Set the number of days you want to forecast
+forecast = sarima_fit.get_forecast(steps=forecast_period)
+forecast_index = pd.date_range(daily_data.index[-1] + to_offset("1D"), periods=forecast_period, freq="D")
+forecast_values = forecast.predicted_mean
+forecast_conf_int = forecast.conf_int()
+
+# Step 10: Plot historical data and forecast for the last 1 year + future 30 days
+plt.figure(figsize=(12, 6))
+plt.plot(daily_data[-365:], label='Historical Demand')
+plt.plot(forecast_index, forecast_values, label='Forecasted Demand', color='orange')
+plt.fill_between(forecast_index,
+                 forecast_conf_int.iloc[:, 0],
+                 forecast_conf_int.iloc[:, 1],
+                 color='orange', alpha=0.3)
+plt.title('Last Year of Demand with 30-Day Forecast')
+plt.xlabel('Date')
+plt.ylabel('Daily Demand')
+plt.legend()
+plt.show()
+
+# Step 11: Print the forecasted values for further analysis
+print("Forecasted demand for the next 30 days:")
+print(forecast_values)                                                                                                                                                                                
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.tsa.stattools import adfuller
+
+# Load the dataset
+file_path = '/content/ML-Dataset.csv'
+data = pd.read_csv(file_path)
+
+# Convert OrderDate to datetime
+data['OrderDate'] = pd.to_datetime(data['OrderDate'], errors='coerce')
+
+# Filter and aggregate data for demand forecasting
+# Selecting relevant columns and dropping NaN in 'OrderDate'
+data = data[['OrderDate', 'OrderItemQuantity']].dropna()
+
+# Resample to daily frequency, summing order quantities per day
+daily_data = data.set_index('OrderDate').resample('D').sum()
+
+# Fill missing dates with 0 (no demand on those days)
+daily_data = daily_data.fillna(0)
+
+# Check stationarity using Augmented Dickey-Fuller test
+adf_test = adfuller(daily_data['OrderItemQuantity'])
+adf_result = adf_test[1]  # p-value
+
+# Differencing if necessary based on p-value (assuming stationarity if p <= 0.05)
+differenced_data = daily_data['OrderItemQuantity'].diff().dropna() if adf_result > 0.05 else daily_data['OrderItemQuantity']
+
+# Fit SARIMA model (seasonal components based on observed seasonality, adjust order as needed)
+# SARIMA parameters (example configuration: (1,1,1)(1,1,1,7) for weekly seasonality)
+sarima_model = SARIMAX(differenced_data, order=(1, 1, 1), seasonal_order=(1, 1, 1, 7))
+sarima_result = sarima_model.fit(disp=False)
+
+# Forecasting for next 30 days
+forecast_steps = 30
+forecast = sarima_result.get_forecast(steps=forecast_steps)
+forecast_index = pd.date_range(daily_data.index[-1] + pd.Timedelta(days=1), periods=forecast_steps, freq='D')
+forecast_values = forecast.predicted_mean
+
+# Plotting actual data with forecast
+plt.figure(figsize=(12, 6))
+plt.plot(daily_data.index, daily_data['OrderItemQuantity'], label='Actual Demand')
+plt.plot(forecast_index, forecast_values, label='Forecasted Demand', color='orange')
+plt.xlabel('Date')
+plt.ylabel('Order Item Quantity')
+plt.title('SARIMA Model Forecast for Future Demand')
+plt.legend()
+plt.grid()
+plt.show()
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.stattools import adfuller
+import warnings
+
+# Suppress warnings for cleaner output
+warnings.filterwarnings('ignore')
+# Load the dataset
+file_path = '/content/ML-Dataset.csv'
+df = pd.read_csv(file_path)
+
+# Convert 'OrderDate' to datetime format, ensuring any errors are handled
+df['OrderDate'] = pd.to_datetime(df['OrderDate'], errors='coerce', dayfirst=True)
+
+# Drop rows with invalid dates (if any)
+df.dropna(subset=['OrderDate'], inplace=True)
+
+# Summarize data by date (sum of OrderItemQuantity)
+df_daily = df.groupby('OrderDate')['OrderItemQuantity'].sum().reset_index()
+
+# Sort the data by date just in case
+df_daily = df_daily.sort_values(by='OrderDate')
+
+# Step 3: Set Date as Index and Ensure Daily Frequency
+df_daily.set_index('OrderDate', inplace=True)
+df_daily = df_daily.asfreq('D').fillna(0)  # Fill missing dates with 0 demand
+# Plot the daily demand
+plt.figure(figsize=(12, 6))
+plt.plot(df_daily.index, df_daily['OrderItemQuantity'], label='Daily Demand', color='blue')
+plt.title('Daily Demand Over Time')
+plt.xlabel('Date')
+plt.ylabel('Order Quantity')
+plt.grid(True)
+plt.show()
+# Decompose the time series
+decomposition = seasonal_decompose(df_daily['OrderItemQuantity'], model='additive', period=365)
+decomposition.plot()
+plt.show()
+# Perform the ADF test
+result = adfuller(df_daily['OrderItemQuantity'])
+print(f'ADF Statistic: {result[0]}')
+print(f'p-value: {result[1]}')
+
+# Interpret the result
+if result[1] > 0.05:
+    print("The time series is non-stationary. Differencing will be applied.")
+    df_daily['OrderItemQuantity'] = df_daily['OrderItemQuantity'].diff().dropna()
+else:
+    print("The time series is stationary.")
+# Define the SARIMA model with chosen parameters
+sarima_model = SARIMAX(df_daily['OrderItemQuantity'],
+                       order=(2, 1, 2),             # (p, d, q)
+                       seasonal_order=(1, 1, 1, 7), # (P, D, Q, s) - Weekly seasonality
+                       enforce_stationarity=False,
+                       enforce_invertibility=False)
+
+# Fit the model
+sarima_result = sarima_model.fit()
+print(sarima_result.summary())
+# Forecast the next 90 days
+forecast_period = 90
+sarima_forecast = sarima_result.forecast(steps=forecast_period)
+
+# Create a DataFrame for forecasted results
+forecast_df = pd.DataFrame({
+    'Date': pd.date_range(df_daily.index[-1] + pd.Timedelta(days=1), periods=forecast_period, freq='D'),
+    'Forecasted_Demand': sarima_forecast
+})
+# Plot the actual data and the forecast
+plt.figure(figsize=(12, 6))
+plt.plot(df_daily.index, df_daily['OrderItemQuantity'], label='Actual Demand', color='blue')
+plt.plot(forecast_df['Date'], forecast_df['Forecasted_Demand'], label='SARIMA Forecast', color='green')
+plt.title('SARIMA Model Forecast')
+plt.xlabel('Date')
+plt.ylabel('Order Quantity')
+plt.legend()
+plt.grid(True)
+plt.show()
+# Display forecasted values
+print(forecast_df)
+
+import pandas as pd
+import numpy as np
+from scipy.stats import norm
+import matplotlib.pyplot as plt
+
+# Sample Parameters (adjust these based on actual values)
+holding_cost_per_unit = 1.5   # Holding cost per unit per day
+order_cost = 50               # Fixed cost per order
+lead_time = 7                 # Lead time in days
+service_level = 0.95          # Desired service level
+
+# Demand forecast (assuming `sarima_forecast` from SARIMA model is available)
+forecast_demand = sarima_forecast  # Forecasted demand series from the SARIMA model
+
+# 1. Calculate Safety Stock
+demand_std_dev = forecast_demand.std()  # Standard deviation of demand
+z_score = norm.ppf(service_level)       # Z-score for the desired service level
+
+# Safety stock formula
+safety_stock = z_score * demand_std_dev * np.sqrt(lead_time)
+print(f"Safety Stock: {safety_stock:.2f}")
+
+# 2. Calculate Reorder Point
+# Average lead-time demand (mean of forecast over lead time period)
+lead_time_demand = forecast_demand[:lead_time].sum()
+reorder_point = lead_time_demand + safety_stock
+print(f"Reorder Point: {reorder_point:.2f}")
+
+# 3. Economic Order Quantity (EOQ)
+# Calculate annual demand and EOQ
+daily_demand_avg = forecast_demand.mean()
+annual_demand = daily_demand_avg * 365  # Estimated annual demand
+EOQ = np.sqrt((2 * order_cost * annual_demand) / holding_cost_per_unit)
+print(f"Economic Order Quantity (EOQ): {EOQ:.2f}")
+
+# 4. Inventory Optimization Algorithm
+# Define a policy to determine when to reorder and how much to order
+inventory_level = EOQ + safety_stock  # Initial inventory level
+inventory_log = []  # To log inventory levels over forecast period
+
+for day in range(len(forecast_demand)):
+    daily_demand = forecast_demand.iloc[day]
+    inventory_level -= daily_demand  # Reduce inventory by daily demand
+
+    # Log inventory level for plotting
+    inventory_log.append(inventory_level)
+
+    # Check if inventory is below reorder point
+    if inventory_level <= reorder_point:
+        inventory_level += EOQ  # Place order for EOQ units
+
+# 5. Plot the Inventory Level over the Forecast Period
+plt.figure(figsize=(12, 6))
+plt.plot(forecast_demand.index, forecast_demand, label='Forecasted Demand', color='blue')
+plt.plot(forecast_demand.index, inventory_log, label='Inventory Level', color='green')
+plt.axhline(y=reorder_point, color='red', linestyle='--', label='Reorder Point')
+plt.axhline(y=safety_stock, color='orange', linestyle='--', label='Safety Stock')
+plt.title('Inventory Optimization with Reorder Point and Safety Stock')
+plt.xlabel('Date')
+plt.ylabel('Units')
+plt.legend()
+plt.grid()
+plt.show()
+
+# Display Summary
+print("Optimization Summary:")
+print(f"Safety Stock: {safety_stock:.2f}")
+print(f"Reorder Point: {reorder_point:.2f}")
+print(f"Economic Order Quantity (EOQ): {EOQ:.2f}")
+
+
+import pandas as pd
+
+# Assuming `forecast_df` and `inventory_log` are available from your previous code
+# `forecast_df` should contain forecasted demand with date as index and `Forecasted_Demand` as the column
+# `inventory_log` is a list of inventory levels for each day in the forecast period
+
+# Create a DataFrame for the inventory log with the same index as forecasted demand
+inventory_df = pd.DataFrame({
+    'Date': forecast_df['Date'],
+    'Forecasted_Demand': forecast_df['Forecasted_Demand'],
+    'Inventory_Level': inventory_log,
+    'Reorder_Point': reorder_point,  # This is constant, so it will be the same for each day
+    'Safety_Stock': safety_stock,    # Constant for each day in the forecast
+    'EOQ': EOQ                      # Constant Economic Order Quantity (EOQ) for each day
+})
+
+# Set Date as index (optional, depending on your analysis needs)
+inventory_df.set_index('Date', inplace=True)
+
+# Save to CSV
+output_path = '/content/inventory_forecast.csv'  # Update path if necessary
+inventory_df.to_csv(output_path)
+
+print(f"CSV file generated and saved at: {output_path}")
