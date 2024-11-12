@@ -1,0 +1,1 @@
+# Smart-Inventory-Management-System_Solar_Industries
