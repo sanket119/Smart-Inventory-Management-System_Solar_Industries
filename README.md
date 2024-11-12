@@ -1,1 +1,2 @@
 # Smart-Inventory-Management-System_Solar_Industries
+This task combines data processing, forecasting, and optimization to establish a dynamic and efficient inventory management system. Through demand forecasting and a well-defined reorder strategy, the model aims to minimize costs while ensuring adequate inventory levels, effectively addressing the core objective of the Smart Inventory Management System
